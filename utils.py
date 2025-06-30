@@ -4,6 +4,8 @@ import pickle
 import random
 import numpy as np
 import logging
+from configs import WINDOW_SIZE, STATE_DIM, ACTION_DIM
+from model import FixedLanderNet
 
 def set_seed(seed):
     random.seed(seed)
@@ -12,15 +14,25 @@ def set_seed(seed):
 
 def save_model(param_vector, structure, path):
     """将神经网络参数保存为 .pt 文件"""
-    from model import FixedLanderNet
-    model = FixedLanderNet(structure)
+    model = FixedLanderNet(
+        window_size=WINDOW_SIZE,
+        state_dim=STATE_DIM,
+        action_dim=ACTION_DIM,
+        hidden_dims=structure[1:-1],
+        output_dim=structure[-1]
+    )
     model.set_flat_params(param_vector)
     torch.save(model.state_dict(), path)
 
 def load_model(path, structure):
     """从 .pt 文件加载神经网络权重"""
-    from model import FixedLanderNet
-    model = FixedLanderNet(structure)
+    model = FixedLanderNet(
+        window_size=WINDOW_SIZE,
+        state_dim=STATE_DIM,
+        action_dim=ACTION_DIM,
+        hidden_dims=structure[1:-1],
+        output_dim=structure[-1]
+    )
     model.load_state_dict(torch.load(path))
     return model
 

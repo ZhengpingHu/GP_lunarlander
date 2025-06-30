@@ -4,27 +4,37 @@ import torch.nn.functional as F
 
 class FixedLanderNet(nn.Module):
     """
-    A flexible feedforward neural network for LunarLander.
-    You can specify any number of hidden layers and sizes.
+    A feedforward neural network for LunarLander using sliding window and output feedback.
     """
-    def __init__(self, structure):
+
+    def __init__(self, window_size=4, state_dim=8, action_dim=4, hidden_dims=[64, 32], output_dim=4):
         """
         Args:
-            structure: list like [8, 32, 16, 4]
-                       input_dim=8, output_dim=4, rest are hidden layers
+            window_size: how many time steps to stack
+            state_dim: dimension of raw state
+            action_dim: dimension of action logits used as input feedback
+            hidden_dims: list of hidden layer sizes
+            output_dim: number of output actions (discrete)
         """
         super().__init__()
-        self.structure = structure
+        self.window_size = window_size
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+
+        input_dim = window_size * (state_dim + action_dim)
+        dims = [input_dim] + hidden_dims
         self.layers = nn.ModuleList()
-        for i in range(len(structure) - 1):
-            self.layers.append(nn.Linear(structure[i], structure[i + 1]))
+
+        for i in range(len(dims) - 1):
+            self.layers.append(nn.Linear(dims[i], dims[i + 1]))
+        self.output_layer = nn.Linear(dims[-1], output_dim)
 
     def forward(self, x):
         for i, layer in enumerate(self.layers):
             x = layer(x)
             if i < len(self.layers) - 1:
-                x = F.relu(x)  # ReLU for hidden layers only
-        return x
+                x = F.relu(x)
+        return self.output_layer(x)
 
     def get_param_count(self):
         return sum(p.numel() for p in self.parameters())

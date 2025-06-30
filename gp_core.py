@@ -1,12 +1,18 @@
 import torch
 import random
-import numpy as np
 from copy import deepcopy
 from model import FixedLanderNet
+from configs import WINDOW_SIZE, STATE_DIM, ACTION_DIM
 
 def init_population(pop_size, structure):
     """初始化种群，每个个体是扁平参数 tensor"""
-    dummy_net = FixedLanderNet(structure)
+    dummy_net = FixedLanderNet(
+        window_size=WINDOW_SIZE,
+        state_dim=STATE_DIM,
+        action_dim=ACTION_DIM,
+        hidden_dims=structure[1:-1],
+        output_dim=structure[-1]
+    )
     param_count = dummy_net.get_param_count()
     return [torch.randn(param_count) * 0.1 for _ in range(pop_size)]
 
