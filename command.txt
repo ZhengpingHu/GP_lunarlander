@@ -1,0 +1,2 @@
+python env_yolo_live.py --lander-model best_lander_only.pt --terrain-model terrain.pt --conf 0.67
+conf=0.67 
