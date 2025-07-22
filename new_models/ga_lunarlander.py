@@ -15,10 +15,15 @@ import matplotlib.pyplot as plt
 
 YOLO_ESTIMATOR = None
 
+def init_worker(lander_model_path, terrain_model_path, conf):
+    global YOLO_ESTIMATOR
+    from yolo_state import YoloStateEstimator
+    YOLO_ESTIMATOR = YoloStateEstimator(lander_model_path, terrain_model_path, conf)
+
 # === 可调整 GA 参数（集中管理） ===
-POP = 500
+POP = 10
 KEEP_RATIO = 0.10
-N_GEN = 600
+N_GEN = 5
 EPISODES = 10
 HIGH_MUT_RATE = 0.1     # f_i < avg → 高突变探索
 LOW_MUT_RATE = 0.02     # f_i ≥ avg → 低突变保优
@@ -80,6 +85,20 @@ def evaluate_ind(args):
             done = term or trunc
             total += r
     env.close()
+
+    lander_ok = YOLO_ESTIMATOR.frames_lander_ok
+    terrain_ok = YOLO_ESTIMATOR.frames_terrain_ok
+    total = YOLO_ESTIMATOR.frames_total
+
+    if total > 0:
+        p1 = 100 * lander_ok / total
+        p2 = 100 * terrain_ok / total
+        print(f"[INFO] Lander识别成功率：{p1:.1f}%，Terrain识别成功率：{p2:.1f}%")
+
+    # 重置计数器
+    YOLO_ESTIMATOR.frames_total = 0
+    YOLO_ESTIMATOR.frames_lander_ok = 0
+    YOLO_ESTIMATOR.frames_terrain_ok = 0
     return total / episodes
 
 
@@ -91,12 +110,17 @@ def main():
     global YOLO_ESTIMATOR
 
     YOLO_ESTIMATOR = YoloStateEstimator(
-    lander_model_path="best-obb.pt",       # 改为你自己的路径
-    terrain_model_path="best-pose.pt",     # 改为你自己的路径
+    lander_model_path="lander.pt",
+    terrain_model_path="terrain.pt",
     conf=0.67
-)
+    )
     workers = max(mp.cpu_count() - 2, 1)
-    pool = mp.Pool(workers)
+    pool = mp.Pool(
+    processes=workers,
+    initializer=init_worker,
+    initargs=("lander.pt", "terrain.pt", 0.1)
+    )
+
     print(f"使用 {workers} 个并行进程评估个体。")
 
     model = NNPolicy()
