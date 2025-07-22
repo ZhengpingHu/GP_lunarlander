@@ -1,33 +1,25 @@
 # ga_lunarlander_adaptive_mutation.py
 import warnings
-
-# 忽略所有 pkg_resources 相关的 DeprecationWarning
-warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="pygame.pkgdata")
 from yolo_state import YoloStateEstimator
-import time, os, multiprocessing as mp
+
+import time, os
 from datetime import datetime
 import torch, torch.nn as nn
 import numpy as np
 import gymnasium as gym
+import cv2
 from tqdm import trange, tqdm
 import matplotlib.pyplot as plt
 
-
-YOLO_ESTIMATOR = None
-
-def init_worker(lander_model_path, terrain_model_path, conf):
-    global YOLO_ESTIMATOR
-    from yolo_state import YoloStateEstimator
-    YOLO_ESTIMATOR = YoloStateEstimator(lander_model_path, terrain_model_path, conf)
-
-# === 可调整 GA 参数（集中管理） ===
-POP = 10
+# === 可调 GA 参数 ===
+POP = 24
 KEEP_RATIO = 0.10
-N_GEN = 5
+N_GEN = 1
 EPISODES = 10
-HIGH_MUT_RATE = 0.1     # f_i < avg → 高突变探索
-LOW_MUT_RATE = 0.02     # f_i ≥ avg → 低突变保优
-MUTATION_TYPE = 'adaptive'  # 'fixed' 或 'adaptive'
+HIGH_MUT_RATE = 0.1
+LOW_MUT_RATE = 0.02
+MUTATION_TYPE = 'adaptive'
 SHUTDOWN_DELAY = 60
 
 # === NNPolicy 网络结构 ===
@@ -41,8 +33,9 @@ class NNPolicy(nn.Module):
         a, b = x[..., :2], x[..., 2:]
         return self.fusion(torch.cat([self.netA(a), self.netB(b)], dim=-1))
 
-# === 权重向量化和遗传操作函数 ===
-def get_weights_vector(m): return torch.cat([p.data.flatten() for p in m.parameters()]).numpy()
+def get_weights_vector(m):
+    return torch.cat([p.data.flatten() for p in m.parameters()]).numpy()
+
 def set_weights_vector(m, vec):
     ptr = 0
     for p in m.parameters():
@@ -57,136 +50,104 @@ def uniform_crossover(p1, p2):
 def mutate(vec, rate):
     return vec + np.random.randn(len(vec)) * rate
 
-# === 单个个体评估函数（并行使用）===
-def evaluate_ind(args):
-    global YOLO_ESTIMATOR
-    vec, episodes = args
-    env = gym.make("LunarLander-v3", render_mode="rgb_array")
-    model = NNPolicy()
-    set_weights_vector(model, vec)
-    total = 0.0
-    for _ in range(episodes):
+def evaluate_ind(vec):
+    total_reward = 0.0
+    for _ in range(EPISODES):
         obs, _ = env.reset()
         done = False
         while not done:
-            # 用 YOLO 获取图像帧估计状态
             frame = env.render()
-            yolo_obs = YOLO_ESTIMATOR.update(frame)
+            # Gym output is RGB → convert to BGR for YOLO consistency
+            frame = np.array(frame)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-            # 若检测失败，则放弃当前 episode（惩罚）
+            yolo_obs = YOLO_ESTIMATOR.update(frame)
             if yolo_obs is None:
-                total += -100
+                total_reward += -100
                 break
 
-            # 控制器决策
             state = torch.tensor(yolo_obs, dtype=torch.float32)
             action = int(torch.argmax(model(state)).item())
             obs, r, term, trunc, _ = env.step(action)
             done = term or trunc
-            total += r
-    env.close()
+            total_reward += r
 
-    lander_ok = YOLO_ESTIMATOR.frames_lander_ok
-    terrain_ok = YOLO_ESTIMATOR.frames_terrain_ok
-    total = YOLO_ESTIMATOR.frames_total
-
-    if total > 0:
-        p1 = 100 * lander_ok / total
-        p2 = 100 * terrain_ok / total
+    land_ok = YOLO_ESTIMATOR.frames_lander_ok
+    terr_ok = YOLO_ESTIMATOR.frames_terrain_ok
+    tot = YOLO_ESTIMATOR.frames_total
+    if tot > 0:
+        p1 = 100 * land_ok / tot
+        p2 = 100 * terr_ok / tot
         print(f"[INFO] Lander识别成功率：{p1:.1f}%，Terrain识别成功率：{p2:.1f}%")
 
-    # 重置计数器
-    YOLO_ESTIMATOR.frames_total = 0
-    YOLO_ESTIMATOR.frames_lander_ok = 0
-    YOLO_ESTIMATOR.frames_terrain_ok = 0
-    return total / episodes
-
+    YOLO_ESTIMATOR.frames_total = YOLO_ESTIMATOR.frames_lander_ok = YOLO_ESTIMATOR.frames_terrain_ok = 0
+    return total_reward / EPISODES
 
 def shutdown_after(delay):
     os.system(f"shutdown -s -t {delay}")
 
-# === 主训练流程 ===
 def main():
-    global YOLO_ESTIMATOR
+    global env, model, YOLO_ESTIMATOR
+
+    env = gym.make("LunarLander-v3", render_mode="rgb_array")
+    model = NNPolicy()
 
     YOLO_ESTIMATOR = YoloStateEstimator(
-    lander_model_path="lander.pt",
-    terrain_model_path="terrain.pt",
-    conf=0.67
-    )
-    workers = max(mp.cpu_count() - 2, 1)
-    pool = mp.Pool(
-    processes=workers,
-    initializer=init_worker,
-    initargs=("lander.pt", "terrain.pt", 0.1)
+        lander_model_path="./best_lander_only.pt",
+        terrain_model_path="./terrain.pt",
+        conf=0.67
     )
 
-    print(f"使用 {workers} 个并行进程评估个体。")
-
-    model = NNPolicy()
     dim = sum(p.numel() for p in model.parameters())
     pop = [np.random.randn(dim) for _ in range(POP)]
+    rewards = {'best':[], 'mean':[], 'worst':[]}
 
     start = time.time()
     t0 = datetime.now().strftime("%Y%m%d_%H%M%S")
-    rewards = {'best':[], 'mean':[], 'worst':[]}
 
     for gen in trange(N_GEN, desc="GA Training"):
-        fitness = pool.map(evaluate_ind, [(vec, EPISODES) for vec in pop])
+        fitness = []
+        for vec in pop:
+            set_weights_vector(model, vec)
+            fitness.append(evaluate_ind(vec))
         f = np.array(fitness)
-        avg_f = f.mean()
-        best, mean, worst = f.max(), f.mean(), f.min()
-        rewards['best'].append(best)
-        rewards['mean'].append(mean)
-        rewards['worst'].append(worst)
-        tqdm.write(f"Gen {gen+1}: best={best:.1f}, mean={mean:.1f}, worst={worst:.1f}")
+        avg_f, best, worst = f.mean(), f.max(), f.min()
+        rewards['best'].append(best); rewards['mean'].append(avg_f); rewards['worst'].append(worst)
+        tqdm.write(f"Gen {gen+1}: best={best:.1f}, mean={avg_f:.1f}, worst={worst:.1f}")
 
-        surv = [pop[i] for i in np.argsort(f)[-int(POP*KEEP_RATIO):]]
+        surv = [pop[i] for i in np.argsort(f)[-max(2, int(POP * KEEP_RATIO)):]]
         new_pop = surv.copy()
-        for vec_i, f_i in zip(surv, sorted(f)[-len(surv):]):
-            pass  # survivors carried over
 
         while len(new_pop) < POP:
             i1, i2 = np.random.choice(len(surv), 2, replace=False)
             c1, c2 = uniform_crossover(surv[i1], surv[i2])
-            if MUTATION_TYPE == 'adaptive':
-                rate1 = HIGH_MUT_RATE if fitness[i1] < avg_f else LOW_MUT_RATE
-                rate2 = HIGH_MUT_RATE if fitness[i2] < avg_f else LOW_MUT_RATE
-            else:
-                rate1 = rate2 = LOW_MUT_RATE
+            rate1 = HIGH_MUT_RATE if f[i1] < avg_f else LOW_MUT_RATE
+            rate2 = HIGH_MUT_RATE if f[i2] < avg_f else LOW_MUT_RATE
             new_pop.append(mutate(c1, rate1))
             if len(new_pop) < POP:
                 new_pop.append(mutate(c2, rate2))
-
         pop = new_pop
 
-    pool.close()
     elapsed = time.time() - start
     print(f"训练完成，总耗时 {elapsed:.1f} 秒。")
-
-    # 保存最终最佳个体
-    fitness_last = fitness
-    best_idx = int(np.argmax(fitness_last))
+    best_idx = int(np.argmax(f))
     best_vec = pop[best_idx]
     set_weights_vector(model, best_vec)
     wfn = f"best_weights_{t0}.pth"
     torch.save(model.state_dict(), wfn)
     print(f"✅ 已保存最佳模型权重：{wfn}")
 
-    # 绘制训练曲线图
     figfn = f"training_rewards_{t0}.png"
-    gens = list(range(1, N_GEN+1))
     plt.figure(figsize=(10,6))
+    gens = list(range(1, N_GEN+1))
     plt.plot(gens, rewards['mean'], label='Mean')
     plt.plot(gens, rewards['best'], label='Best')
     plt.fill_between(gens, rewards['worst'], rewards['best'], color='gray', alpha=0.2)
     plt.xlabel('Generation'); plt.ylabel('Reward'); plt.title('GA Training Rewards')
     plt.legend(); plt.grid(True)
-    plt.savefig(figfn)
-    plt.show()
+    plt.savefig(figfn); plt.show()
     print(f"📈 已保存训练曲线图：{figfn}")
 
-    # 自动关机判断
     if elapsed > SHUTDOWN_DELAY:
         print(f"训练超过 {SHUTDOWN_DELAY} 秒，{SHUTDOWN_DELAY} 秒后自动关机；取消命令：shutdown -a")
         shutdown_after(SHUTDOWN_DELAY)
