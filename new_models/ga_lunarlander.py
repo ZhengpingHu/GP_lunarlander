@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 # === 可调 GA 参数 ===
 POP = 4
 KEEP_RATIO = 0.10
-N_GEN = 1
+N_GEN = 10
 EPISODES = 10
 HIGH_MUT_RATE = 0.1
 LOW_MUT_RATE = 0.02
