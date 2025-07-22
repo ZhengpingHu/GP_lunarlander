@@ -13,7 +13,7 @@ from tqdm import trange, tqdm
 import matplotlib.pyplot as plt
 
 # === 可调 GA 参数 ===
-POP = 24
+POP = 4
 KEEP_RATIO = 0.10
 N_GEN = 1
 EPISODES = 10
