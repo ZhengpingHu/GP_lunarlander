@@ -79,7 +79,9 @@ def worker_init():
         lander_model_path="./best_lander_only.pt",
         terrain_model_path="./terrain.pt",
         conf=0.67,
-        device="cuda" if torch.cuda.is_available() else "cpu"
+        
+        #device="cuda" if torch.cuda.is_available() else "cpu"
+    	device = "cpu"
     )
     worker_globals['env'] = env
     worker_globals['model'] = model
