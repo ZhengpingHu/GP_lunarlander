@@ -10,6 +10,13 @@
 - 输出 8 维状态： [cosθ, sinθ, x_norm, y_norm, vx_norm, vy_norm, legL, legR]
 """
 
+import os
+# 允许重复的 OpenMP（避免崩溃/报错），并限制每进程的 OMP/MKL 线程
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
+
 import math, time
 import numpy as np
 import cv2
@@ -113,10 +120,14 @@ class TerrainTracker:
             else:
                 height[:] = H-1
 
-        # 平滑（中值+高斯）
-        k = self.smooth_kernel | 1
-        height = cv2.medianBlur(height.astype(np.float32), ksize=k)
-        height = cv2.GaussianBlur(height, (k,1), 0).reshape(-1)
+        # 平滑：使用 1D 高斯（支持 float32），避免 medianBlur 的 CV_8U 限制
+        k = self.smooth_kernel | 1  # 保证奇数
+        height = height.astype(np.float32)
+        height_img = height.reshape(1, -1)  # (1, W)
+        # 1D 高斯平滑两遍，等价于更大的核但更稳
+        height_img = cv2.GaussianBlur(height_img, (k, 1), 0, borderType=cv2.BORDER_REPLICATE)
+        height_img = cv2.GaussianBlur(height_img, (k, 1), 0, borderType=cv2.BORDER_REPLICATE)
+        height = height_img.reshape(-1)
         return height
 
     def update(self, frame_rgb: np.ndarray) -> np.ndarray:

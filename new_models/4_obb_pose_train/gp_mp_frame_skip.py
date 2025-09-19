@@ -6,6 +6,14 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pygame.pkgdata")
 warnings.filterwarnings("ignore", category=UserWarning, module="gym.logger")
 
+import os
+# 允许重复的 OpenMP（避免崩溃/报错），并限制每进程的 OMP/MKL 线程
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
+
+
 from yolo_state_mp_frame_skip_fused import FusedStateEstimator
 
 import os, time
@@ -80,13 +88,31 @@ def _safe_reset_counters(est):
         est.frames_total = est.frames_lander_ok = est.frames_terrain_ok = 0
 
 def worker_init():
+    # 限制每个子进程的 OpenMP/BLAS 线程（cv2 和 torch）
     torch.set_num_threads(1)
+    try:
+        torch.set_num_interop_threads(1)
+    except Exception:
+        pass
+    try:
+        cv2.setNumThreads(0)
+    except Exception:
+        pass
+
+    # 可选：把 Ultralytics 的 NMS 超时阈值拉高，减少刷屏警告
+    try:
+        from ultralytics.utils import settings
+        settings.update({"nms_max_time": 10.0})
+    except Exception:
+        pass
+
+    # --- 环境与策略网络 ---
     env = gym.make("LunarLander-v3", render_mode="rgb_array")
     model = NNPolicy()
 
-    # === 按你的权重路径修改 ===
-    OBB_MODEL  = "./lander.pt"       # 第一阶段：OBB 定位
-    POSE_MODEL = "./lander-pose.pt"  # 第二阶段：Pose 角度
+    # --- 两阶段估计器（按你的权重路径修改）---
+    OBB_MODEL  = "./lander.pt"       # 阶段1：OBB
+    POSE_MODEL = "./lander-pose.pt"  # 阶段2：Pose
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
     yolo_estimator = FusedStateEstimator(
@@ -102,6 +128,8 @@ def worker_init():
         device=DEVICE,
         frameskip_period=YOLO_INFERENCE_FREQ
     )
+
+    # --- 注册到全局 ---
     worker_globals['env'] = env
     worker_globals['model'] = model
     worker_globals['yolo_estimator'] = yolo_estimator
