@@ -1,0 +1,5 @@
+# 先开服务端（示例）
+python yolo_rpc_server.py --obb-model .\lander.pt --pose-model .\lander-pose.pt --device cuda:0 --port 6001
+
+# 另一个终端启动 GA（示例参数）
+python gp_ga_4d_rpc.py --rpc-port 6001 --population 200 --generations 80 --processes 16

@@ -1,0 +1,4 @@
+python yolo_rpc_server.py --obb-model ".\lander.pt"  --pose-model ".\lander-pose.pt"  --device "cuda:0" --imgsz-obb 640 --imgsz-pose 384  --conf-obb 0.25 --conf-pose 0.20  --pad 0.25 --gate-deg 120 --smooth-alpha 0.2 --port 6000
+
+
+python gp_ga_4d_rpc.py --processes 16 --population 120 --generations 60 --coarse-seeds 1 --reeval-topk 0.1 --reeval-seeds 4
