@@ -1,0 +1,13 @@
+{
+  "population": 120,
+  "generations": 100,
+  "elite_frac": 0.1,
+  "init_sigma": 0.1,
+  "processes": 8,
+  "rpc_host": "127.0.0.1",
+  "rpc_port": 6001,
+  "authkey": "yolo-rpc",
+  "outdir": "runs_ga",
+  "run_dir": "runs_ga\\ga_20251006_165226_7d_rpc_test",
+  "tag": "7d_rpc_test"
+}
