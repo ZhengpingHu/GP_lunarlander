@@ -1,0 +1,4 @@
+python yolo_rpc_server.py --obb-model .\lander.pt --pose-model .\lander-pose.pt --device cuda:0 --imgsz-obb 640 --imgsz-pose 384 --conf-obb 0.25 --conf-pose 0.20 --gate-hard-deg 20 --host 127.0.0.1 --port 6001
+
+
+python gp_ga_7d_rpc.py --rpc-host 127.0.0.1 --rpc-port 6001 --processes 16 --population 120 --generations 200 --sigma 0.1 --subset-k 5 --success-threshold 0.0 --seed-refresh-frac 0.2 --seed-refresh-direction bottom --global-seed 42 --outdir runs_ga --tag final_test
