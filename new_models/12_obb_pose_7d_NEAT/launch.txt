@@ -1,0 +1,9 @@
+python yolo_rpc_server.py --obb-model .\lander.pt --pose-model .\lander-pose.pt --device cuda:0 --imgsz-obb 640 --imgsz-pose 384 --conf-obb 0.25 --conf-pose 0.20 --gate-hard-deg 20 --host 127.0.0.1 --port 6001
+
+
+python gp_ga_neat.py --rpc-host 127.0.0.1  --rpc-port 6001  --processes 16 --generations 200  --neat-config-file neat.cfg --outdir runs_neat_final --tag neat_run_01 --global-seed 42 --pool-size 256 --subset-k 5 --success-threshold 100.0  --seed-refresh-frac 0.4 --seed-refresh-direction bottom --max-seed-age 5
+
+
+For test:
+
+python test_model.py --run-dir runs_ga_final/ga_20231027_103045_final_test --model-type training_best/full_eval --num-tests 10 --render
